@@ -28,26 +28,29 @@ CREDENTIALS_FILE = "credentials.json"
 
 VALID_BATCHES = ["history", "day1", "day2", "day3", "day4", "month1", "month2"]
 
-# Offset in days from "today" for each batch.
-# history emails are spread across -28 to -1 days; others are fixed offsets.
-BATCH_DAY_OFFSETS = {
-    "history": None,   # special: spread across past 28 days
-    "day1":    0,
-    "day2":    1,
-    "day3":    2,
-    "day4":    3,
-    "month1":  30,
-    "month2":  60,
+# Fixed date ranges for each batch (all dates in 2026).
+# Each value is (start_date, end_date) — emails are spread across this range.
+BATCH_DATE_RANGES = {
+    "history": (datetime(2025, 12, 18, tzinfo=timezone.utc), datetime(2026, 1, 15, 23, 59, tzinfo=timezone.utc)),
+    "day1":    (datetime(2026, 1, 16, tzinfo=timezone.utc), datetime(2026, 1, 16, 23, 59, tzinfo=timezone.utc)),
+    "day2":    (datetime(2026, 1, 17, tzinfo=timezone.utc), datetime(2026, 1, 17, 23, 59, tzinfo=timezone.utc)),
+    "day3":    (datetime(2026, 1, 18, tzinfo=timezone.utc), datetime(2026, 1, 18, 23, 59, tzinfo=timezone.utc)),
+    "day4":    (datetime(2026, 1, 19, tzinfo=timezone.utc), datetime(2026, 1, 19, 23, 59, tzinfo=timezone.utc)),
+    "month1":  (datetime(2026, 1, 20, tzinfo=timezone.utc), datetime(2026, 2, 1, 23, 59, tzinfo=timezone.utc)),
+    "month2":  None,  # special: Feb 1 → today
 }
 
+# Batches that should be injected as already-read
+READ_BATCHES = {"history"}
+
 BATCH_INFO = {
-    "history": {"label": "Inject History", "desc": "~300 old emails spanning weeks", "icon": "&#128218;", "color": "#4a5568"},
-    "day1":    {"label": "Day 1", "desc": "Monday morning flood", "icon": "&#9728;&#65039;", "color": "#7c3aed"},
-    "day2":    {"label": "Day 2", "desc": "Follow-ups, contractor responses", "icon": "&#128197;", "color": "#2563eb"},
-    "day3":    {"label": "Day 3", "desc": "Quotes, invoices arriving", "icon": "&#128196;", "color": "#0891b2"},
-    "day4":    {"label": "Day 4", "desc": "Closures, more invoices", "icon": "&#9989;", "color": "#059669"},
-    "month1":  {"label": "Month +1", "desc": "Lease renewals, monthly invoices", "icon": "&#128197;", "color": "#d97706"},
-    "month2":  {"label": "Month +2", "desc": "Wrap-ups, seasonal items", "icon": "&#128197;", "color": "#dc2626"},
+    "history": {"label": "History", "desc": "Dec 18 – Jan 15 (read)", "icon": "&#128218;", "color": "#4a5568"},
+    "day1":    {"label": "Day 1", "desc": "Jan 16 — new incidents", "icon": "&#9728;&#65039;", "color": "#7c3aed"},
+    "day2":    {"label": "Day 2", "desc": "Jan 17 — follow-ups", "icon": "&#128197;", "color": "#2563eb"},
+    "day3":    {"label": "Day 3", "desc": "Jan 18 — quotes & invoices", "icon": "&#128196;", "color": "#0891b2"},
+    "day4":    {"label": "Day 4", "desc": "Jan 19 — closures", "icon": "&#9989;", "color": "#059669"},
+    "month1":  {"label": "Month 1", "desc": "Jan 20 – Feb 1", "icon": "&#128197;", "color": "#d97706"},
+    "month2":  {"label": "Month 2", "desc": "Feb 1 – today", "icon": "&#128197;", "color": "#dc2626"},
 }
 
 # ---------------------------------------------------------------------------
@@ -210,26 +213,31 @@ def inject_batch(batch):
 
         # Compute fake dates for this batch
         now = datetime.now(timezone.utc)
-        day_offset = BATCH_DAY_OFFSETS.get(batch, 0)
+        date_range = BATCH_DATE_RANGES.get(batch)
+        if date_range is None:
+            # month2: Feb 1 → today
+            range_start = datetime(2026, 2, 1, tzinfo=timezone.utc)
+            range_end = now
+        else:
+            range_start, range_end = date_range
+
+        total_seconds = max((range_end - range_start).total_seconds(), 1)
         rng = random.Random(f"elron-ts-{batch}")
+        is_read_batch = batch in READ_BATCHES
 
         # Cache: thread_subject -> Gmail threadId (for this request)
         thread_cache: dict[str, str] = {}
 
         for i, email_data in enumerate(emails):
-            # Build a realistic fake timestamp
-            if day_offset is None:
-                # History: spread across past 28 days, earliest first
-                days_ago = 28 - (i * 28 / max(len(emails) - 1, 1))
-                fake_dt = now - timedelta(days=days_ago)
-            else:
-                # Fixed-day batches: same day, spread across business hours
-                base = now + timedelta(days=day_offset)
-                hour_offset = 7.0 + (11.0 * i / max(len(emails) - 1, 1))
-                minute_jitter = rng.randint(-15, 15)
-                fake_dt = base.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(hours=hour_offset, minutes=minute_jitter)
-
-            fake_dt = fake_dt + timedelta(seconds=rng.randint(0, 59))
+            # Spread emails evenly across the date range with jitter
+            progress = i / max(len(emails) - 1, 1)
+            base_dt = range_start + timedelta(seconds=total_seconds * progress)
+            # Add business-hours offset (7:00-18:00) for single-day batches
+            if range_start.date() == range_end.date():
+                hour_offset = 7.0 + (11.0 * progress)
+                base_dt = base_dt.replace(hour=0, minute=0, second=0) + timedelta(hours=hour_offset)
+            # Per-email jitter
+            fake_dt = base_dt + timedelta(seconds=rng.randint(0, 300), minutes=rng.randint(-5, 5))
 
             raw = build_raw_message(
                 from_name=email_data["from_name"],
@@ -243,7 +251,8 @@ def inject_batch(batch):
             # Threading: determine if this email should join an existing thread
             thread_subject = email_data.get("thread_subject")
             is_reply = email_data.get("is_reply", False)
-            insert_body = {"labelIds": ["INBOX", "UNREAD"], "raw": raw}
+            labels = ["INBOX"] if is_read_batch else ["INBOX", "UNREAD"]
+            insert_body = {"labelIds": labels, "raw": raw}
 
             if thread_subject and is_reply:
                 # Look up threadId: first in our local cache, then search Gmail
@@ -316,12 +325,54 @@ def reset_inbox():
             ).execute()
             deleted += len(chunk)
 
-        _thread_ids.clear()
-
         return jsonify({
             "success": True,
             "deleted": deleted,
             "message": f"Deleted {deleted} messages. Inbox is now empty.",
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/mark-read", methods=["POST"])
+def mark_all_read():
+    try:
+        service = get_gmail_service()
+    except PermissionError:
+        return jsonify({"success": False, "auth_required": True}), 401
+
+    try:
+        page_token = None
+        message_ids = []
+
+        while True:
+            params = {"userId": "me", "labelIds": ["UNREAD"], "maxResults": 500}
+            if page_token:
+                params["pageToken"] = page_token
+            result = service.users().messages().list(**params).execute()
+            messages = result.get("messages", [])
+            message_ids.extend([m["id"] for m in messages])
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
+
+        if not message_ids:
+            return jsonify({"success": True, "marked": 0, "message": "All emails already read."})
+
+        # Gmail batchModify supports up to 1000 IDs
+        marked = 0
+        for i in range(0, len(message_ids), 1000):
+            chunk = message_ids[i : i + 1000]
+            service.users().messages().batchModify(
+                userId="me",
+                body={"ids": chunk, "removeLabelIds": ["UNREAD"]},
+            ).execute()
+            marked += len(chunk)
+
+        return jsonify({
+            "success": True,
+            "marked": marked,
+            "message": f"Marked {marked} emails as read.",
         })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -552,10 +603,13 @@ HTML_DASHBOARD = """
   </div>
 
   <div class="reset-section">
+    <button class="btn-reset" style="background: linear-gradient(135deg, #2563eb, #0891b2); margin-bottom: 0.4rem;" onclick="runAction('/mark-read', this)">
+      &#9993;&#65039; Mark All as Read
+    </button>
     <button class="btn-reset" onclick="runAction('/reset', this)">
       &#128465;&#65039; Reset Inbox to Zero
     </button>
-    <div class="hint">Deletes ALL emails. Then inject History to start over.</div>
+    <div class="hint">History is injected as read. Day 1+ arrive as unread.</div>
   </div>
 
   <div id="status"></div>
