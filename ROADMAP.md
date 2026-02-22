@@ -1,21 +1,27 @@
 # Roadmap — Elron Inbox Simulator
 
-Current status: **v2.0 — Live and functional** (Feb 2026)
+Current status: **v3.0 — Live and functional** (Feb 2026)
 
 ---
 
-## Completed (v2.0)
+## Completed (v3.0)
 
 - [x] Pre-scripted storylines replacing random email generation
-- [x] 530 emails across 30 interconnected storylines
-- [x] 7 sequential batch injection buttons (History, Day 1–4, Month +1, Month +2)
-- [x] Gmail threading via Message-ID / In-Reply-To / References
-- [x] Realistic fake timestamps (history = past 28 days, day batches = sequential days)
+- [x] 530 emails across 40+ interconnected storylines
+- [x] 7 sequential batch injection buttons (History, Day 1–4, Month 1, Month 2)
+- [x] **Per-tenant threading** — no cross-tenant Gmail threads; AI must group related reports
+- [x] **Cluster scenarios** — 1–2 per day batch (elevator, garage door, hot water, lights, heating)
+- [x] Gmail threading via `threadId` lookup + Message-ID / In-Reply-To / References
+- [x] **Fixed date timeline** — absolute dates in 2026 (History=Dec 18–Jan 15, Day 1=Jan 16, etc.)
+- [x] **Read/unread status** — History injected as read; Day 1+ as unread
+- [x] **Mark All as Read** button and `/mark-read` route
+- [x] `internalDateSource=dateHeader` for accurate Gmail timestamps
 - [x] Programmatic filler generator for target email counts
 - [x] One-click inbox reset
 - [x] Dark-themed dashboard UI
 - [x] Vercel deployment
 - [x] Google OAuth web flow (any Gmail account)
+- [x] **Simulation data Excel** — 5-tab export (Tenants, Landlord, Properties, Units, Handymen)
 
 ---
 
@@ -31,9 +37,8 @@ Current status: **v2.0 — Live and functional** (Feb 2026)
 ### Content Quality
 
 - [ ] **Review all storyline emails** — Proofread for tone consistency, realistic details, and proper threading
-- [ ] **Derek Cooper audit** — Ensure Derek's tone is consistently rude across all 30 storylines he appears in
-- [ ] **Contractor invoice realism** — Add realistic dollar amounts, invoice numbers, and line items
-- [ ] **Date references in email bodies** — Email body text should reference dates that match the fake timestamps (e.g., "as we discussed last Tuesday" should align with the actual fake date)
+- [ ] **Derek Cooper audit** — Ensure Derek's tone is consistently rude across all storylines he appears in
+- [ ] **Date references in email bodies** — Email body text should reference dates that match the fixed 2026 timeline
 
 ---
 
@@ -50,7 +55,7 @@ Current status: **v2.0 — Live and functional** (Feb 2026)
 - [ ] **Attachments** — Add PDF invoices, photos of damage, lease documents as actual Gmail attachments
 - [ ] **CC/BCC** — Some emails should CC other tenants, contractors, or a property management team
 - [ ] **Labels/Categories** — Auto-apply Gmail labels (e.g., "Maintenance", "Rent", "Urgent") during injection
-- [ ] **Read/unread mix** — History emails should be marked as read; only new batches should be unread
+- [x] ~~**Read/unread mix**~~ — Done: History = read, Day 1+ = unread
 - [ ] **Starred/important** — Mark certain urgent emails as starred to simulate a real inbox state
 
 ### Content Expansion
@@ -92,7 +97,7 @@ Current status: **v2.0 — Live and functional** (Feb 2026)
 - [ ] **Type hints** — Add full type annotations to `storylines.py`
 - [ ] **Logging** — Add structured logging for injection/reset operations
 - [ ] **Rate limiting** — Prevent accidental double-injection
-- [ ] **Database for state** — Replace in-memory `_thread_ids` with Redis or similar for Vercel compatibility
+- [x] ~~**Database for state**~~ — Solved: threading now uses Gmail `threadId` search (stateless)
 
 ---
 
